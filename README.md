@@ -1,6 +1,3 @@
-<p align="center">
-  <img src="public/Repo_logo.svg" alt="PR Review Agent" width="180" />
-</p>
 
 <h1 align="center">PR Review Agent</h1>
 
