@@ -66,6 +66,20 @@ const buildChatModel = (spec: ModelSpec, settings: AdapterSettings, env: Env): B
         clientOptions: { timeout: settings.timeoutMs },
       });
     }
+    case "groq": {
+      const apiKey = env.llmKeys.groq;
+      if (apiKey === undefined) {
+        throw new MissingApiKeyError("groq");
+      }
+      // Groq exposes an OpenAI-compatible API — use ChatOpenAI with a custom baseURL
+      return new ChatOpenAI({
+        ...common,
+        apiKey,
+        configuration: {
+          baseURL: "https://api.groq.com/openai/v1",
+        },
+      });
+    }
   }
 };
 

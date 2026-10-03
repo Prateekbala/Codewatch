@@ -19,6 +19,7 @@ const EnvSchema = z.object({
   GITHUB_TOKEN: optionalString,
   OPENAI_API_KEY: optionalString,
   ANTHROPIC_API_KEY: optionalString,
+  GROQ_API_KEY: optionalString,
 });
 
 export type GitHubAuthConfig =
@@ -33,6 +34,7 @@ export interface Env {
   readonly llmKeys: {
     readonly openai: string | undefined;
     readonly anthropic: string | undefined;
+    readonly groq: string | undefined;
   };
 }
 
@@ -70,7 +72,7 @@ export const loadEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
     logLevel: parsed.LOG_LEVEL,
     github: resolveGitHubAuth(parsed),
     webhookSecret: parsed.GITHUB_WEBHOOK_SECRET,
-    llmKeys: { openai: parsed.OPENAI_API_KEY, anthropic: parsed.ANTHROPIC_API_KEY },
+    llmKeys: { openai: parsed.OPENAI_API_KEY, anthropic: parsed.ANTHROPIC_API_KEY, groq: parsed.GROQ_API_KEY },
   };
 };
 

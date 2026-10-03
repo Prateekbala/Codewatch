@@ -26,7 +26,7 @@
     "test:coverage": "vitest run --coverage",
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
     "smoke:github": "node scripts/fetch-pr.ts",
-    "eval": "node evals/cli.ts"
+    "eval": "node evals/cli.ts --config .pr-agent.yaml"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { DEFAULT_IGNORE_GLOBS } from "./defaults.ts";
 
 export const ModelSpecSchema = z.strictObject({
-  provider: z.enum(["openai", "anthropic"]),
+  provider: z.enum(["openai", "anthropic", "groq"]),
   model: z.string().min(1),
   temperature: z.number().min(0).max(2).optional(),
   maxOutputTokens: z.number().int().positive().optional(),
