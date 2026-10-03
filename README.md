@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Repo_logo.png" alt="PR Review Agent" width="180" />
+  <img src="public/Repo_logo.png" alt="PR Review Agent" width="180" />
 </p>
 
 <h1 align="center">PR Review Agent</h1>
@@ -29,7 +29,7 @@ On every review it:
 ## Architecture
 
 <p align="center">
-  <img src="AGENT_DIAGRAM.png" alt="Architecture diagram" width="720" />
+  <img src="public/AGENT_DIAGRAM.png" alt="Architecture diagram" width="720" />
 </p>
 
 The system has a **transport-agnostic core** (`src/core/`) shared by three shells:
