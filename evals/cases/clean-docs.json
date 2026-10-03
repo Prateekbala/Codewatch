@@ -1,0 +1,16 @@
+{
+  "id": "clean-docs",
+  "description": "Documentation only change",
+  "pr": {
+    "title": "Fix typo in README",
+    "body": "Typo fix."
+  },
+  "commits": ["docs: typo"],
+  "files": [
+    {
+      "path": "README.md",
+      "patch": "@@ -1,3 +1,3 @@\n # Widgets\n-A libary for widgets.\n+A library for widgets.\n "
+    }
+  ],
+  "expected": []
+}

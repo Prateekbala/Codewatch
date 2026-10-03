@@ -1,0 +1,23 @@
+{
+  "id": "breaking-api-change",
+  "description": "Optional public field becomes required",
+  "pr": {
+    "title": "Make port explicit",
+    "body": "Require callers to pass a port."
+  },
+  "commits": ["feat: explicit port"],
+  "files": [
+    {
+      "path": "src/config.ts",
+      "patch": "@@ -7,4 +7,4 @@ export interface PublicConfig {\n   host: string;\n-  port?: number;\n+  port: number;\n   tls: boolean;\n }"
+    }
+  ],
+  "expected": [
+    {
+      "path": "src/config.ts",
+      "startLine": 8,
+      "endLine": 8,
+      "category": "api"
+    }
+  ]
+}

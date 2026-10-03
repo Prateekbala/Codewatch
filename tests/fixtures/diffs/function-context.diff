@@ -1,0 +1,13 @@
+diff --git a/fn.py b/fn.py
+index 5f1624f..66c53e0 100644
+--- a/fn.py
++++ b/fn.py
+@@ -9,7 +9,7 @@ class Service:
+         d = 4
+         e = 5
+         f = 6
+-        g = 7
++        g = 77
+         h = 8
+         return a
+ 

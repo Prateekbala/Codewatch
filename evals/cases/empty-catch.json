@@ -1,0 +1,13 @@
+{
+  "id": "empty-catch",
+  "description": "Swallows fetch errors",
+  "pr": { "title": "Handle fetch failures", "body": "" },
+  "commits": ["fetch"],
+  "files": [
+    {
+      "path": "src/http.ts",
+      "patch": "@@ -3,7 +3,7 @@ export async function get(url: string) {\n   try {\n     return await fetch(url);\n   } catch (e) {\n-    throw e;\n+    return null;\n   }\n }"
+    }
+  ],
+  "expected": [{ "path": "src/http.ts", "startLine": 6, "endLine": 6, "category": "bug" }]
+}

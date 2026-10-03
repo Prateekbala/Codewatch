@@ -1,0 +1,15 @@
+{
+  "id": "open-redirect",
+  "description": "User-controlled redirect",
+  "pr": { "title": "Support return URLs", "body": "" },
+  "commits": ["feat redirect"],
+  "files": [
+    {
+      "path": "src/auth/redirect.ts",
+      "patch": "@@ -1,3 +1,5 @@\n export const redirect = (res: Response, target: string) => {\n+  res.setHeader('Location', target);\n+  res.statusCode = 302;\n };"
+    }
+  ],
+  "expected": [
+    { "path": "src/auth/redirect.ts", "startLine": 2, "endLine": 3, "category": "security" }
+  ]
+}

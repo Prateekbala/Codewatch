@@ -1,0 +1,23 @@
+{
+  "id": "off-by-one",
+  "description": "Pagination returns one extra item",
+  "pr": {
+    "title": "Tweak pagination window",
+    "body": "Adjust the window calculation."
+  },
+  "commits": ["fix: pagination window"],
+  "files": [
+    {
+      "path": "src/paginate.ts",
+      "patch": "@@ -3,4 +3,4 @@ export const paginate = <T>(items: T[], page: number, size: number): T[] => {\n   const start = page * size;\n-  const end = start + size;\n+  const end = start + size + 1;\n   return items.slice(start, end);\n };"
+    }
+  ],
+  "expected": [
+    {
+      "path": "src/paginate.ts",
+      "startLine": 4,
+      "endLine": 4,
+      "category": "bug"
+    }
+  ]
+}

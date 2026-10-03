@@ -1,0 +1,23 @@
+{
+  "id": "missing-await",
+  "description": "Dropped await on an async delete",
+  "pr": {
+    "title": "Simplify user deletion",
+    "body": "Small cleanup of deleteUser."
+  },
+  "commits": ["refactor: simplify deleteUser"],
+  "files": [
+    {
+      "path": "src/users.ts",
+      "patch": "@@ -10,6 +10,6 @@ export async function deleteUser(id: string) {\n   const user = await db.users.find(id);\n   if (!user) {\n     return null;\n   }\n-  await db.users.remove(id);\n+  db.users.remove(id);\n   return user;"
+    }
+  ],
+  "expected": [
+    {
+      "path": "src/users.ts",
+      "startLine": 14,
+      "endLine": 14,
+      "category": "bug"
+    }
+  ]
+}

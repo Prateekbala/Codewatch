@@ -1,0 +1,16 @@
+diff --git a/rename_me.txt b/renamed.txt
+similarity index 89%
+rename from rename_me.txt
+rename to renamed.txt
+index 229a822..41607fb 100644
+--- a/rename_me.txt
++++ b/renamed.txt
+@@ -12,7 +12,7 @@ r11
+ r12
+ r13
+ r14
+-r15
++r15 changed
+ r16
+ r17
+ r18

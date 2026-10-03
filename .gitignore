@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Secrets / certs
+*.pem
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Docs (generated / internal)
+docs/
+
+# Agent task artifacts
+.agents/
+
+# Eval reports
+evals/reports/
+
+# Legacy / misc
+pr-agent/

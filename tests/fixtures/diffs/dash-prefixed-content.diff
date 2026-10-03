@@ -1,0 +1,11 @@
+diff --git a/dashes.txt b/dashes.txt
+index 27bfbc3..1d7ba96 100644
+--- a/dashes.txt
++++ b/dashes.txt
+@@ -1,4 +1,4 @@
+ keep
+--- old comment
+-++ plus plus
++-- new comment
++++ plus plus changed
+ end
