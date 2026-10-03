@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/Repo_logo.png" alt="PR Review Agent" width="180" />
+  <img src="public/Repo_logo.svg" alt="PR Review Agent" width="180" />
 </p>
 
 <h1 align="center">PR Review Agent</h1>
@@ -260,7 +260,7 @@ The `/healthz` endpoint returns `{ "ok": true }` and is used as the liveness che
 | Webhook server + skip rules + slash commands | Done |
 | Evals (precision/recall, baseline comparison) | Done |
 | Dockerfile + Fly.io deploy | Done |
-| Queue / Postgres / Redis | Out of scope (`docs/MVP-PLAN.md`) |
+| Queue / Postgres / Redis | Out of scope|
 | Pinecone retrieval, specialist fleet, agent tools | Out of scope |
 
 ---
@@ -280,12 +280,3 @@ tests/            Vitest unit, integration, and graph tests
 
 ---
 
-## Documentation
-
-| Document | What it covers |
-| --- | --- |
-| `ARCHITECTURE.md` | Component map, design principles, security model, extension points |
-| `docs/IMPLEMENTATION.md` | How each graph stage works (theory, invariants, data flow) |
-| `docs/MVP-PLAN.md` | What shipped vs what was deliberately cut for the MVP |
-| `docs/WEBHOOK.md` | GitHub App setup, permissions, smee.io for local development |
-| `evals/README.md` | Running the eval suite and recording baselines |
