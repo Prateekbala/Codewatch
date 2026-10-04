@@ -1,21 +1,11 @@
 <h1 align="center">CodeWatch</h1>
 
-<p align="center">
-  <img src="public/Repo_logo.svg" alt="CodeWatch Logo" width="120" />
-</p>
 
 <p align="center">
   An autonomous GitHub pull request reviewer built on LangGraph and TypeScript.<br/>
   Structured findings · inline comments · sticky summary · cost per run.
 </p>
 
-<p align="center">
-  <a href="https://hub.docker.com/r/prateekbala28/codewatch">
-    <img src="https://img.shields.io/docker/pulls/prateekbala28/codewatch?label=Docker%20Pulls&logo=docker" alt="Docker Pulls" />
-  </a>
-  <img src="https://img.shields.io/badge/node-%3E%3D24-brightgreen" alt="Node >= 24" />
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
-</p>
 
 ---
 
