@@ -1,6 +1,7 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { BaseMessage } from "@langchain/core/messages";
+import type { AIMessage, BaseMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
 import { ChatOpenAI } from "@langchain/openai";
 import type { z } from "zod";
 
@@ -23,9 +24,35 @@ export interface StructuredInvoker {
   invoke(messages: BaseMessage[], options: StructuredCallOptions): Promise<StructuredCallResult>;
 }
 
+export interface ToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly schema: z.ZodObject;
+}
+
+export interface ToolCallRequest {
+  readonly id: string;
+  readonly name: string;
+  readonly args: Record<string, unknown>;
+}
+
+export interface ToolStepResult {
+  /** The raw assistant turn, to be appended to the transcript. */
+  readonly message: AIMessage;
+  readonly text: string;
+  readonly toolCalls: readonly ToolCallRequest[];
+  readonly usage: TokenUsage | null;
+}
+
+export interface ToolInvoker {
+  invoke(messages: BaseMessage[], options: StructuredCallOptions): Promise<ToolStepResult>;
+}
+
 export interface ChatModelAdapter {
   readonly spec: ModelSpec;
   structured(schema: z.ZodType, name: string): StructuredInvoker;
+  /** One model turn that may request tool calls. The caller owns the loop. */
+  withTools(tools: readonly ToolDefinition[]): ToolInvoker;
 }
 
 export interface AdapterSettings {
@@ -111,6 +138,37 @@ export const createLangChainAdapterFactory =
               ...(options.signal === undefined ? {} : { signal: options.signal }),
             })) as RawStructuredOutput;
             return { parsed: result.parsed, usage: extractUsage(result.raw) };
+          },
+        };
+      },
+      withTools(tools) {
+        // The executors are never called by LangChain; they only carry the schema for binding.
+        const definitions = tools.map((definition) =>
+          tool(() => "", {
+            name: definition.name,
+            description: definition.description,
+            schema: definition.schema,
+          }),
+        );
+        const bound = model.bindTools?.(definitions);
+        if (bound === undefined) {
+          throw new Error(`model ${spec.model} does not support tool calling`);
+        }
+        return {
+          async invoke(messages, options) {
+            const message = (await bound.invoke(messages, {
+              ...(options.signal === undefined ? {} : { signal: options.signal }),
+            })) as AIMessage;
+            return {
+              message,
+              text: typeof message.content === "string" ? message.content : "",
+              toolCalls: (message.tool_calls ?? []).map((call, index) => ({
+                id: call.id ?? `call_${index}`,
+                name: call.name,
+                args: call.args,
+              })),
+              usage: extractUsage(message),
+            };
           },
         };
       },

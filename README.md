@@ -1,16 +1,27 @@
+<h1 align="center">CodeWatch</h1>
 
-<h1 align="center">PR Review Agent</h1>
+<p align="center">
+  <img src="public/Repo_logo.svg" alt="CodeWatch Logo" width="120" />
+</p>
 
 <p align="center">
   An autonomous GitHub pull request reviewer built on LangGraph and TypeScript.<br/>
   Structured findings · inline comments · sticky summary · cost per run.
 </p>
 
+<p align="center">
+  <a href="https://hub.docker.com/r/prateekbala28/codewatch">
+    <img src="https://img.shields.io/docker/pulls/prateekbala28/codewatch?label=Docker%20Pulls&logo=docker" alt="Docker Pulls" />
+  </a>
+  <img src="https://img.shields.io/badge/node-%3E%3D24-brightgreen" alt="Node >= 24" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+</p>
+
 ---
 
 ## What it does
 
-PR Review Agent connects to your GitHub repositories and reviews pull requests the way a senior engineer would — catching real bugs, security issues, and bad patterns, not generating noise.
+CodeWatch connects to your GitHub repositories and reviews pull requests the way a senior engineer would — catching real bugs, security issues, and bad patterns, not generating noise.
 
 On every review it:
 
@@ -26,7 +37,7 @@ On every review it:
 ## Architecture
 
 <p align="center">
-  <img src="public/AGENT_DIAGRAM.png" alt="Architecture diagram" width="720" />
+  <img src="public/CodeWatch Architecture Overview.png" alt="Architecture diagram" width="720" />
 </p>
 
 The system has a **transport-agnostic core** (`src/core/`) shared by three shells:
@@ -51,103 +62,103 @@ Each finding is grounded against the actual diff line index before publishing. U
 
 ---
 
-## Quick start
+## Running with Docker
 
-**Prerequisites:** Node ≥ 24, pnpm
+The image is published on Docker Hub at [`prateekbala28/codewatch`](https://hub.docker.com/r/prateekbala28/codewatch). No need to clone the repo or install Node — just pull and run.
+
+### 1. Pull the image
 
 ```bash
-git clone https://github.com/your-org/pr-review-agent.git
-cd pr-review-agent
-pnpm install
-cp .env.example .env
+docker pull prateekbala28/codewatch:latest
 ```
 
-Set the required environment variables in `.env`:
+### 2. Create a `.env` file
+
+Create a file called `.env` in any directory with your credentials:
 
 ```bash
-# Required for all modes
+# LLM provider — at least one required
 OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=        # optional
+GROQ_API_KEY=             # optional
 
-# CLI with a personal token
-GITHUB_TOKEN=ghp_...
-
-# CLI or server with a GitHub App
+# GitHub App credentials
 GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."
-GITHUB_APP_INSTALLATION_ID=12345678   # CLI only
-
-# Server mode
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
+
+# Optional
+LOG_LEVEL=info
+PORT=3000
+```
+
+> For the private key, replace literal newlines with `\n` so it fits on one line, or use `GITHUB_APP_PRIVATE_KEY_PATH` and mount the key file as a volume.
+
+### 3. Run the container
+
+```bash
+docker run -d \
+  --name codewatch \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  --env-file .env \
+  prateekbala28/codewatch:latest
+```
+
+### 4. Verify it's running
+
+```bash
+curl http://localhost:3000/healthz
+# → {"ok":true}
+```
+
+### Stop / restart
+
+```bash
+docker stop codewatch
+docker start codewatch
+```
+
+### View logs
+
+```bash
+docker logs -f codewatch
+```
+
+### Update to the latest image
+
+```bash
+docker pull prateekbala28/codewatch:latest
+docker stop codewatch && docker rm codewatch
+# re-run the docker run command from step 3
 ```
 
 ---
 
-## Usage
+## Slash commands
 
-### CLI
-
-```bash
-# Dry run — review to stdout, nothing posted to GitHub
-pnpm dev review owner/repo#12 --dry-run
-
-# Post the review as inline comments + sticky summary
-pnpm dev review owner/repo#12
-
-# Generate a PR description (title, type, walkthrough)
-pnpm dev describe owner/repo#12 --dry-run
-
-# Inspect the effective merged configuration
-pnpm dev config show
-
-# Fetch and print raw PR data (smoke test)
-pnpm smoke:github owner/repo#12
-```
-
-Global flags: `--config <file>`, `--log-level debug|info|warn|error`, `--json`, `--record-dir <dir>` (saves run records).
-
-### Webhook server
-
-```bash
-# Development (with hot reload)
-pnpm dev:server
-
-# Production
-pnpm build && pnpm start
-
-# Docker
-docker build -t pr-review-agent .
-docker run -p 3000:3000 --env-file .env pr-review-agent
-```
-
-The server handles:
-
-| Event | Action |
-| --- | --- |
-| `pull_request` opened / synchronize / reopened / ready_for_review | Auto-review (if `server.autoReviewOnOpen: true`) |
-| `issue_comment` `/review` or `/describe` | Triggered review by a collaborator |
-| `GET /healthz` | Liveness check |
-
-See `docs/WEBHOOK.md` for GitHub App permissions and smee.io tunnel setup for local development.
-
-### Slash commands (via PR comment)
-
-Collaborators only. Bot authors and drive-by commenters are rejected.
+Once the App is installed on a repo, collaborators can trigger reviews from PR comments:
 
 ```
-/review    — trigger a fresh review on the current head
-/describe  — regenerate the PR description
+/review    — trigger a fresh review on the current head SHA
+/describe  — regenerate the PR description (title, type, walkthrough)
 ```
+
+Bot authors and non-collaborators are automatically rejected.
 
 ---
 
-## Configuration
+## Per-repo configuration
 
-Drop a `.pr-agent.yaml` file on the **default branch** of any repository. Policy lives in the repo, not in the bot deployment.
+Drop a `.pr-agent.yaml` file on the **default branch** of any repository to customize behaviour. Policy lives in the repo, not in the bot deployment.
 
 ```yaml
 review:
-  maxInlineComments: 10       # cap on posted inline comments (overflow in summary)
+  maxInlineComments: 10       # cap on inline comments (overflow goes to summary)
   enableVerifier: true        # second-pass keep/drop per finding (recommended)
+  verifierMode: single        # `agentic` lets the verifier read files and search code
+  maxInvestigations: 8        # findings investigated with tools per run (agentic only)
+  maxToolCallsPerReviewer: 5  # tool calls per investigated finding
   minConfidence: 0.6          # drop findings below this threshold
   severityThreshold: low      # minimum severity to post
   maxConcurrency: 4           # parallel review units and verifier batches
@@ -173,34 +184,62 @@ models:
     model: gpt-4o-mini
 
 budgets:
-  perRunUsd: 0.50             # hard stop (no silent fallback)
+  perRunUsd: 0.50             # hard stop — run is aborted, not silently truncated
   perRunTokens: 200000
 ```
 
-Configuration layers (last wins): built-in defaults → `.pr-agent.yaml` on default branch → CLI `--config` flag. Invalid layers are dropped entirely and logged — they never silently corrupt the config.
+Configuration layers (last wins): built-in defaults → `.pr-agent.yaml` on default branch → CLI `--config` flag. Invalid layers are dropped entirely and logged.
 
 ---
 
-## Evals
+## Local development
 
-The eval suite is the primary quality gate. It runs the real review graph against synthetic fixture PRs and scores precision, recall, and F1 against labeled line ranges.
+**Prerequisites:** Node ≥ 24, pnpm
 
 ```bash
-pnpm eval
+git clone https://github.com/Prateekbala/Codewatch.git
+cd Codewatch
+pnpm install
+cp .env.example .env
+# Fill in .env with your keys
 ```
 
-Example output:
+### CLI usage
 
-| Metric | Value |
-| --- | --- |
-| Cases | 12 synthetic PRs (bugs, security, clean, adversarial) |
-| Precision | Reported per run |
-| Recall | Reported per run |
-| Cost | Tokens and USD per case in the JSON report |
+```bash
+# Dry run — review to stdout, nothing posted to GitHub
+pnpm dev review owner/repo#12 --dry-run
 
-Record a baseline after a clean run, then compare future runs against it to catch regressions before they reach production. See `evals/baselines/README.md`.
+# Post the review as inline comments + sticky summary
+pnpm dev review owner/repo#12
 
-Eval fixtures cover: missing `await`, SQL injection, hardcoded secret, breaking API change, off-by-one error, weak crypto, open redirect, empty catch, prompt injection, and clean PRs.
+# Generate a PR description
+pnpm dev describe owner/repo#12 --dry-run
+
+# Inspect the effective merged configuration
+pnpm dev config show
+
+# Fetch and print raw PR data (smoke test)
+pnpm smoke:github owner/repo#12
+```
+
+Global flags: `--config <file>`, `--log-level debug|info|warn|error`, `--json`, `--record-dir <dir>`
+
+### Run the webhook server locally
+
+```bash
+# With hot reload
+pnpm dev:server
+```
+
+Use [smee.io](https://smee.io) to forward GitHub webhook events to your local server. See `docs/WEBHOOK.md`.
+
+### Build the Docker image yourself
+
+```bash
+docker build -t codewatch .
+docker run -p 3000:3000 --env-file .env codewatch
+```
 
 ---
 
@@ -223,57 +262,19 @@ pnpm test:coverage
 
 ---
 
-## Deployment
+## Evals
 
-The server is a single Node process. Deploy anywhere that runs Docker or Node 24.
-
-**Fly.io** (example — adjust `app` name in `fly.toml`):
+The eval suite runs the real review graph against synthetic fixture PRs and scores precision, recall, and F1 against labeled line ranges.
 
 ```bash
-fly secrets set OPENAI_API_KEY=... GITHUB_APP_ID=... GITHUB_APP_PRIVATE_KEY=... GITHUB_WEBHOOK_SECRET=...
-fly deploy
+pnpm eval
 ```
 
-**Docker:**
+14 synthetic cases: missing `await`, SQL injection, hardcoded secret, breaking API change, off-by-one error, weak crypto, open redirect, empty catch, prompt injection, and clean PRs.
 
-```bash
-docker build -t pr-review-agent .
-docker run -p 3000:3000 --env-file .env pr-review-agent
-```
-
-The `/healthz` endpoint returns `{ "ok": true }` and is used as the liveness check.
-
-> **Note on scaling:** In-memory dedupe and per-PR run locks are per-process. Multiple replicas need sticky routing or external state. For a single-instance deployment this is not an issue.
-
----
-
-## Project status
-
-| Area | State |
-| --- | --- |
-| Core, CLI, diff engine | Done |
-| Review graph (fan-out, grounding, verifier) | Done |
-| CI findings from check annotations | Done |
-| Webhook server + skip rules + slash commands | Done |
-| Evals (precision/recall, baseline comparison) | Done |
-| Dockerfile + Fly.io deploy | Done |
-| Queue / Postgres / Redis | Out of scope|
-| Pinecone retrieval, specialist fleet, agent tools | Out of scope |
-
----
-
-## Repository layout
-
-```
-src/
-  core/           All product logic (config, diff, context, llm, graph, github, commands)
-  server/         Hono webhook server, supervisor, delivery cache
-  cli/            Commander entry point
-evals/            Eval runner, scoring, fixture cases, reports
-demo/             Seed instructions for a public demo repository
-docs/             MVP-PLAN.md, WEBHOOK.md, IMPLEMENTATION.md
-tests/            Vitest unit, integration, and graph tests
-```
-
----
+| Configuration | Precision | Recall | Cost/PR |
+| --- | --- | --- | --- |
+| Reviewer only | 45–60% | 35–45% | lowest |
+| + single-pass verifier | 55–70% | 30–42% | +10–20% |
+| + agentic verifier | 65–78% | 30–42% | +30–80% |
 

@@ -1,6 +1,10 @@
-import type { BaseMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 
-import type { ChatModelAdapterFactory, StructuredCallResult } from "../../src/core/llm/adapters.ts";
+import type {
+  ChatModelAdapterFactory,
+  StructuredCallResult,
+  ToolStepResult,
+} from "../../src/core/llm/adapters.ts";
 import { resolveConfigStrict } from "../../src/core/config/loader.ts";
 import type { Config } from "../../src/core/config/schema.ts";
 import type { GitHubClient } from "../../src/core/github/client.ts";
@@ -8,6 +12,7 @@ import type {
   ChangedFile,
   CheckAnnotation,
   CheckRunSummary,
+  CodeSearchHit,
   CommitSummary,
   CreateReviewInput,
   FileContent,
@@ -32,7 +37,12 @@ export type ScriptStep =
       readonly usage?: { inputTokens: number; outputTokens: number } | null;
     }
   | { readonly error: Error }
-  | { readonly hang: true };
+  | { readonly hang: true }
+  | {
+      /** A tool-enabled turn: requested calls, or just `text` to stop calling tools. */
+      readonly tools: readonly { name: string; args: Record<string, unknown> }[];
+      readonly text?: string;
+    };
 
 export interface RecordedCall {
   readonly model: string;
@@ -67,11 +77,42 @@ export class ScriptedLlm {
             });
           });
         }
-        const resolved = step as Exclude<ScriptStep, { error: Error } | { hang: true }>;
+        if (!("parsed" in step)) {
+          throw new Error("scripted tool turn consumed by a structured call");
+        }
         return {
-          parsed: resolved.parsed,
-          usage:
-            resolved.usage === undefined ? { inputTokens: 100, outputTokens: 50 } : resolved.usage,
+          parsed: step.parsed,
+          usage: step.usage === undefined ? { inputTokens: 100, outputTokens: 50 } : step.usage,
+        };
+      },
+    }),
+    withTools: () => ({
+      // eslint-disable-next-line @typescript-eslint/require-await
+      invoke: async (messages): Promise<ToolStepResult> => {
+        this.calls.push({ model: spec.model, schemaName: "tools", messages });
+        const step = this.#scripts.get(spec.model)?.shift();
+        if (!step) {
+          throw new Error(`no scripted response left for ${spec.model}`);
+        }
+        if ("error" in step) {
+          throw step.error;
+        }
+        if (!("tools" in step)) {
+          throw new Error("scripted structured step consumed by a tool turn");
+        }
+        const toolCalls = step.tools.map((call, index) => ({
+          id: `call_${this.calls.length}_${index}`,
+          name: call.name,
+          args: call.args,
+        }));
+        return {
+          message: new AIMessage({
+            content: step.text ?? "",
+            tool_calls: toolCalls.map((call) => ({ ...call, type: "tool_call" as const })),
+          }),
+          text: step.text ?? "",
+          toolCalls,
+          usage: { inputTokens: 100, outputTokens: 50 },
         };
       },
     }),
@@ -167,6 +208,19 @@ export class FakeGitHubClient implements GitHubClient {
 
   listCheckAnnotations(): Promise<CheckAnnotation[]> {
     return Promise.resolve(this.data.annotations);
+  }
+
+  listTree(): Promise<string[]> {
+    return Promise.resolve(Object.keys(this.data.contents));
+  }
+
+  searchCode(_repo: RepoRef, query: string, limit: number): Promise<CodeSearchHit[]> {
+    return Promise.resolve(
+      Object.entries(this.data.contents)
+        .filter(([, content]) => content.includes(query))
+        .slice(0, limit)
+        .map(([path]) => ({ path, fragments: [] })),
+    );
   }
 
   getIssue(_repo: RepoRef, number: number): Promise<Issue | null> {

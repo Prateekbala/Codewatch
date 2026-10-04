@@ -1,0 +1,38 @@
+models:
+  triage:
+    provider: groq
+    model: openai/gpt-oss-20b
+    contextWindow: 131072
+
+  reviewer:
+    provider: groq
+    model: openai/gpt-oss-120b
+    contextWindow: 131072
+
+  verifier:
+    provider: groq
+    model: openai/gpt-oss-20b
+    contextWindow: 131072
+
+  summarizer:
+    provider: groq
+    model: openai/gpt-oss-20b
+    contextWindow: 131072
+
+review:
+  maxInlineComments: 10
+  enableVerifier: true
+  verifierMode: agentic
+  maxInvestigations: 8
+  maxToolCallsPerReviewer: 4
+  minConfidence: 0.5
+  severityThreshold: low
+  maxConcurrency: 1
+
+diff:
+  contextLinesBefore: 4
+  contextLinesAfter: 4
+
+llm:
+  maxRetries: 8
+  timeoutMs: 120000

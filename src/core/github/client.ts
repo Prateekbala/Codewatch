@@ -5,6 +5,7 @@ import type {
   ChangedFile,
   CheckAnnotation,
   CheckRunSummary,
+  CodeSearchHit,
   CommitSummary,
   CreateReviewInput,
   FileContent,
@@ -28,6 +29,8 @@ export interface GitHubClient {
   listCheckRuns(repo: RepoRef, sha: string): Promise<CheckRunSummary[]>;
   listCheckAnnotations(repo: RepoRef, checkRunId: number): Promise<CheckAnnotation[]>;
   getFileContent(repo: RepoRef, path: string, ref: string): Promise<FileContent | null>;
+  listTree(repo: RepoRef, ref: string): Promise<string[]>;
+  searchCode(repo: RepoRef, query: string, limit: number): Promise<CodeSearchHit[]>;
   updatePullRequest(ref: PullRequestRef, update: PullRequestUpdate): Promise<void>;
   createIssueComment(ref: PullRequestRef, body: string): Promise<number>;
   updateIssueComment(repo: RepoRef, commentId: number, body: string): Promise<void>;
@@ -232,6 +235,30 @@ export class OctokitGitHubClient implements GitHubClient {
       }
       throw error;
     }
+  }
+
+  async listTree(repo: RepoRef, ref: string): Promise<string[]> {
+    const { data } = await this.#octokit.rest.git.getTree({
+      owner: repo.owner,
+      repo: repo.repo,
+      tree_sha: ref,
+      recursive: "true",
+    });
+    return data.tree.flatMap((entry) => (entry.type === "blob" ? [entry.path] : []));
+  }
+
+  async searchCode(repo: RepoRef, query: string, limit: number): Promise<CodeSearchHit[]> {
+    const { data } = await this.#octokit.rest.search.code({
+      q: `${query} repo:${repo.owner}/${repo.repo}`,
+      per_page: Math.min(Math.max(limit, 1), PAGE_SIZE),
+      mediaType: { format: "text-match" },
+    });
+    return data.items.slice(0, limit).map((item) => ({
+      path: item.path,
+      fragments: (item.text_matches ?? []).flatMap((match) =>
+        typeof match.fragment === "string" ? [match.fragment] : [],
+      ),
+    }));
   }
 
   async updatePullRequest(ref: PullRequestRef, update: PullRequestUpdate): Promise<void> {

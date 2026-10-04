@@ -1,0 +1,27 @@
+{
+  "id": "caller-passes-user-input",
+  "description": "Shell command built from a parameter; the only caller passes a raw request field (confirmed by reading the caller)",
+  "pr": {
+    "title": "Add video conversion helper",
+    "body": "Adds convert() and wires it to the upload route."
+  },
+  "commits": ["feat: add convert helper"],
+  "files": [
+    {
+      "path": "src/jobs/convert.ts",
+      "patch": "@@ -3,4 +3,5 @@ import { execSync } from \"node:child_process\";\n \n export function convert(input: string) {\n-  return null;\n+  execSync(`ffmpeg -i ${input} out.mp4`);\n+  return \"out.mp4\";\n }"
+    }
+  ],
+  "contents": {
+    "src/jobs/convert.ts": "import { execSync } from \"node:child_process\";\n\nexport function convert(input: string) {\n  execSync(`ffmpeg -i ${input} out.mp4`);\n  return \"out.mp4\";\n}\n",
+    "src/routes/upload.ts": "import { convert } from \"../jobs/convert\";\n\nexport async function upload(req: Request) {\n  // filename comes straight from the multipart form field\n  return convert(req.body.filename);\n}\n"
+  },
+  "expected": [
+    {
+      "path": "src/jobs/convert.ts",
+      "startLine": 5,
+      "endLine": 5,
+      "category": "security"
+    }
+  ]
+}

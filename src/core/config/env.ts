@@ -72,7 +72,11 @@ export const loadEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
     logLevel: parsed.LOG_LEVEL,
     github: resolveGitHubAuth(parsed),
     webhookSecret: parsed.GITHUB_WEBHOOK_SECRET,
-    llmKeys: { openai: parsed.OPENAI_API_KEY, anthropic: parsed.ANTHROPIC_API_KEY, groq: parsed.GROQ_API_KEY },
+    llmKeys: {
+      openai: parsed.OPENAI_API_KEY,
+      anthropic: parsed.ANTHROPIC_API_KEY,
+      groq: parsed.GROQ_API_KEY,
+    },
   };
 };
 

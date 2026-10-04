@@ -1,0 +1,21 @@
+{
+  "id": "guarded-elsewhere",
+  "description": "Interpolated SQL looks injectable in the diff, but the route validates id as an integer before the handler runs (needs a cross-file read to rule out)",
+  "pr": {
+    "title": "Implement getOrder lookup",
+    "body": "Replaces the stub with a real query. The route-level validator already coerces `id` to an integer."
+  },
+  "commits": ["feat: implement getOrder"],
+  "files": [
+    {
+      "path": "src/routes/orders.ts",
+      "patch": "@@ -4,5 +4,6 @@\n \n export async function getOrder(req: Request) {\n   const id = req.params.id;\n-  return null;\n+  const rows = await db.query(`SELECT * FROM orders WHERE id = ${id}`);\n+  return rows[0] ?? null;\n }"
+    }
+  ],
+  "contents": {
+    "src/routes/orders.ts": "import { db } from \"../db\";\nimport type { Request } from \"../http\";\n\n\nexport async function getOrder(req: Request) {\n  const id = req.params.id;\n  const rows = await db.query(`SELECT * FROM orders WHERE id = ${id}`);\n  return rows[0] ?? null;\n}\n",
+    "src/routes/index.ts": "import { z } from \"zod\";\nimport { validateParams } from \"../middleware/validate\";\nimport { getOrder } from \"./orders\";\n\n// Every :id route coerces the param to a safe integer before the handler runs.\nconst IdParams = z.object({ id: z.coerce.number().int().positive() });\n\nrouter.get(\"/orders/:id\", validateParams(IdParams), getOrder);\n",
+    "src/middleware/validate.ts": "export const validateParams = (schema) => (req, res, next) => {\n  const parsed = schema.safeParse(req.params);\n  if (!parsed.success) {\n    return res.status(400).end();\n  }\n  req.params = parsed.data;\n  next();\n};\n"
+  },
+  "expected": []
+}

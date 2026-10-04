@@ -4,7 +4,13 @@ import type { z } from "zod";
 import type { Config, ModelRole, ModelSpec } from "../config/schema.ts";
 import type { Logger } from "../logging/logger.ts";
 
-import type { ChatModelAdapter, ChatModelAdapterFactory, StructuredInvoker } from "./adapters.ts";
+import type {
+  ChatModelAdapter,
+  ChatModelAdapterFactory,
+  StructuredInvoker,
+  ToolDefinition,
+  ToolStepResult,
+} from "./adapters.ts";
 import type { CostTracker } from "./cost.ts";
 import {
   AllModelsFailedError,
@@ -19,6 +25,15 @@ export interface StructuredRequest<S extends z.ZodType> {
   readonly node: string;
   readonly schema: S;
   readonly schemaName: string;
+  readonly messages: readonly BaseMessage[];
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+}
+
+export interface ToolTurnRequest {
+  readonly role: ModelRole;
+  readonly node: string;
+  readonly tools: readonly ToolDefinition[];
   readonly messages: readonly BaseMessage[];
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
@@ -80,6 +95,49 @@ export class LlmGateway {
           { node: request.node, model: spec.model, err: error },
           "model attempt failed",
         );
+      }
+    }
+
+    if (failures.length === 1 && failures[0]?.error instanceof MissingApiKeyError) {
+      throw failures[0].error;
+    }
+    throw new AllModelsFailedError(request.role, failures);
+  }
+
+  /**
+   * One tool-enabled model turn with model fallback and budget accounting.
+   * The caller owns the loop and the transcript.
+   */
+  async invokeWithTools(request: ToolTurnRequest): Promise<ToolStepResult> {
+    const failures: ModelFailure[] = [];
+    const { config, tracker, logger } = this.#deps;
+
+    for (const spec of this.candidatesFor(request.role)) {
+      request.signal?.throwIfAborted();
+      try {
+        tracker.assertWithinBudget();
+        const timeout = AbortSignal.timeout(request.timeoutMs ?? config.review.nodeTimeoutMs);
+        const signal =
+          request.signal === undefined ? timeout : AbortSignal.any([request.signal, timeout]);
+        const result = await this.#adapter(spec)
+          .withTools(request.tools)
+          .invoke([...request.messages], { signal });
+        if (result.usage) {
+          tracker.record({
+            node: request.node,
+            provider: spec.provider,
+            model: spec.model,
+            inputTokens: result.usage.inputTokens,
+            outputTokens: result.usage.outputTokens,
+          });
+        }
+        return result;
+      } catch (error) {
+        if (request.signal?.aborted === true || error instanceof BudgetExceededError) {
+          throw error;
+        }
+        failures.push({ model: spec.model, error });
+        logger.warn({ node: request.node, model: spec.model, err: error }, "tool turn failed");
       }
     }
 

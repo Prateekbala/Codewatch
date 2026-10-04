@@ -2,6 +2,9 @@ import type { DescribeOutcome, ReviewOutcome } from "../core/commands/run.ts";
 import type { ConfigIssue } from "../core/config/loader.ts";
 import { formatReview } from "../core/graph/review/format.ts";
 import type { CostSummary } from "../core/llm/cost.ts";
+import { prettyDescribeOutcome, prettyReviewOutcome } from "./pretty.ts";
+
+const isTTY = (): boolean => process.stdout.isTTY === true;
 
 const formatCost = (usage: CostSummary): string =>
   usage.unpricedModels.length > 0
@@ -52,6 +55,9 @@ export const describeOutcomeToJson = (outcome: DescribeOutcome): Record<string, 
 };
 
 export const describeOutcomeToText = (outcome: DescribeOutcome): string => {
+  if (isTTY()) {
+    return prettyDescribeOutcome(outcome);
+  }
   const { describe, usage } = outcome;
   const cost = formatCost(usage);
   const status = outcome.dryRun
@@ -99,6 +105,9 @@ export const reviewOutcomeToJson = (outcome: ReviewOutcome): Record<string, unkn
 };
 
 export const reviewOutcomeToText = (outcome: ReviewOutcome): string => {
+  if (isTTY()) {
+    return prettyReviewOutcome(outcome);
+  }
   const { review, usage, publish } = outcome;
   const status = outcome.dryRun
     ? "dry run, nothing was posted"

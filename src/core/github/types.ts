@@ -89,6 +89,11 @@ export interface CheckAnnotation {
   readonly message: string;
 }
 
+export interface CodeSearchHit {
+  readonly path: string;
+  readonly fragments: readonly string[];
+}
+
 export interface FileContent {
   readonly path: string;
   readonly ref: string;

@@ -64,6 +64,8 @@ export const ConfigSchema = z.strictObject({
       nodeTimeoutMs: z.number().int().positive().default(120_000),
       maxGraphSteps: z.number().int().positive().default(40),
       enableVerifier: z.boolean().default(true),
+      verifierMode: z.enum(["single", "agentic"]).default("single"),
+      maxInvestigations: z.number().int().min(0).max(30).default(8),
     })
     .prefault({}),
   server: z

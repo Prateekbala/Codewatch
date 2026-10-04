@@ -96,6 +96,10 @@ export interface ReviewStats {
   readonly belowConfidence: number;
   readonly belowSeverity: number;
   readonly rejectedByVerifier: number;
+  /** Findings examined by the tool-using investigator (agentic mode only). */
+  readonly investigated: number;
+  readonly investigationToolCalls: number;
+  readonly severityRevised: number;
   readonly ciImported: number;
   readonly failedUnits: number;
   readonly units: number;

@@ -3,6 +3,7 @@ import type {
   ChangedFile,
   CheckAnnotation,
   CheckRunSummary,
+  CodeSearchHit,
   CommitSummary,
   FileContent,
   Issue,
@@ -110,6 +111,19 @@ export class MemoryGitHubClient implements GitHubClient {
   getFileContent(_repo: unknown, path: string, ref: string): Promise<FileContent | null> {
     const content = this.#case.contents[path];
     return Promise.resolve(content === undefined ? null : { path, ref, content });
+  }
+
+  listTree(): Promise<string[]> {
+    return Promise.resolve(Object.keys(this.#case.contents));
+  }
+
+  searchCode(_repo: unknown, query: string, limit: number): Promise<CodeSearchHit[]> {
+    return Promise.resolve(
+      Object.entries(this.#case.contents)
+        .filter(([, content]) => content.includes(query))
+        .slice(0, limit)
+        .map(([path]) => ({ path, fragments: [] })),
+    );
   }
 
   getIssue(): Promise<Issue | null> {

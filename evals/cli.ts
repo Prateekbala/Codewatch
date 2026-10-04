@@ -81,4 +81,9 @@ const file = join(values.out, `${report.startedAt.replaceAll(":", "-")}-${report
 writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
 
 process.stdout.write(`${formatReport(report, comparison)}\n\nreport: ${file}\n`);
-process.exitCode = comparison?.regressed === true || report.totals.erroredCases > 0 ? 1 : 0;
+process.exitCode =
+  comparison?.regressed === true ||
+  report.totals.erroredCases > 0 ||
+  report.totals.degradedCases > 0
+    ? 1
+    : 0;

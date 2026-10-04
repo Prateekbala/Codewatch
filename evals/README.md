@@ -14,6 +14,19 @@ pnpm eval --config path/to/config.yaml
 
 Requires the provider API keys used by the configured models. Each run writes a JSON report to `evals/reports/` (ignored by git). Exit code is `1` when any case errored or when precision or recall dropped more than `--tolerance` (default `0.05`) versus the baseline.
 
+### Single-pass vs agentic verifier
+
+```bash
+pnpm eval --config evals/configs/single.yaml  --label single
+pnpm eval --config evals/configs/agentic.yaml --label agentic --baseline evals/reports/<single-report>.json
+```
+
+The agentic config turns on the tool-using investigator (`review.verifierMode: agentic`). `guarded-elsewhere` (a clean PR whose guard lives in another file) and `caller-passes-user-input` (confirmation needs the caller) are the cases where it should help. Report precision, recall, and cost per case for both, since tool use costs extra tokens.
+
+### Degraded runs are not results
+
+If a review unit fails (provider rate limit, timeout), the case is marked `DEGR`, the report prints a warning, and the command exits with code `1`. Scores from such a run only measure the outage. Rerun with `--concurrency 1`, a higher `llm.maxRetries`, or a key with higher rate limits (the Groq free tier allows only 8,000 tokens per minute per model, which is not enough for a full run).
+
 To record a baseline, copy a report you trust into `evals/baselines/`.
 
 ## Cases

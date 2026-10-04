@@ -11,6 +11,7 @@ import type { CoreServices } from "../../services.ts";
 
 import { findingsFromAnnotations } from "./ci-findings.ts";
 import { deduplicateFindings, promoteFinding } from "./fingerprint.ts";
+import { createInvestigator } from "./investigate.ts";
 import { verifyFindings } from "./verify.ts";
 import { createReviewPrompt, createSummaryPrompt } from "./prompt.ts";
 import {
@@ -37,7 +38,10 @@ type Counters = Partial<
     | "belowConfidence"
     | "belowSeverity"
     | "ciImported"
-    | "rejectedByVerifier",
+    | "rejectedByVerifier"
+    | "investigated"
+    | "toolCalls"
+    | "severityRevised",
     number
   >
 >;
@@ -256,10 +260,36 @@ export const createReviewGraph = (services: CoreServices) => {
 
   const verify = async (state: State, runnable: RunnableConfig): Promise<Partial<State>> => {
     runnable.signal?.throwIfAborted();
-    const verified = await verifyFindings(llm, config, state.findings, runnable.signal);
+    const agentic =
+      config.review.verifierMode === "agentic" &&
+      config.review.maxToolCallsPerReviewer > 0 &&
+      config.review.maxInvestigations > 0;
+    const investigator = agentic
+      ? createInvestigator({
+          llm,
+          github,
+          config,
+          logger,
+          pr: state.pr,
+          changedPaths: state.context.files.map((file) => file.path),
+        })
+      : undefined;
+    const verified = await verifyFindings(llm, config, state.findings, {
+      ...(runnable.signal === undefined ? {} : { signal: runnable.signal }),
+      ...(investigator === undefined ? {} : { investigator }),
+      logger,
+    });
+    // An investigation can lower severity; honour the configured floor again.
+    const minSeverity = SEVERITY_RANK[config.review.severityThreshold];
+    const kept = verified.kept.filter((finding) => SEVERITY_RANK[finding.severity] >= minSeverity);
     return {
-      findings: rankFindings(verified.kept),
-      counters: { rejectedByVerifier: verified.rejected },
+      findings: rankFindings(kept),
+      counters: {
+        rejectedByVerifier: verified.rejected + (verified.kept.length - kept.length),
+        investigated: verified.investigated,
+        toolCalls: verified.toolCalls,
+        severityRevised: verified.severityRevised,
+      },
     };
   };
 
@@ -314,6 +344,9 @@ export const createReviewGraph = (services: CoreServices) => {
       belowConfidence: state.counters.belowConfidence ?? 0,
       belowSeverity: state.counters.belowSeverity ?? 0,
       rejectedByVerifier: state.counters.rejectedByVerifier ?? 0,
+      investigated: state.counters.investigated ?? 0,
+      investigationToolCalls: state.counters.toolCalls ?? 0,
+      severityRevised: state.counters.severityRevised ?? 0,
       ciImported: state.counters.ciImported ?? 0,
       failedUnits: state.failures.length,
       units: prepared.units.length,

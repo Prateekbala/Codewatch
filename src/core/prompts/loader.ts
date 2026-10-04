@@ -9,7 +9,10 @@ export type PromptName =
   | "summary.system"
   | "summary.user"
   | "verifier.system"
-  | "verifier.user";
+  | "verifier.user"
+  | "investigator.system"
+  | "investigator.user"
+  | "investigator.verdict";
 
 export interface PromptTemplate {
   readonly name: PromptName;
@@ -70,6 +73,8 @@ export const UNTRUSTED_TAGS = [
   "finding",
   "explanation",
   "evidence",
+  "investigation_log",
+  "tool_result",
 ] as const;
 
 export const neutralizeTags = (text: string): string =>

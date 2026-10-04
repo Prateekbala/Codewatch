@@ -2,9 +2,27 @@
 
 **Scope:** GitHub pull requests only  
 **Stack:** TypeScript (Node ≥24), LangChain.js, LangGraph, Octokit (GitHub App), Hono, Commander, Zod, Vitest  
-**Status:** MVP as-built (October 2026). Long-range ideas from the original design are in [§12 Future](#12-future-not-implemented).
+**Status:** MVP as-built (October 2026). **Current classification: LLM pipeline with a bounded agentic verification stage** (opt-in `review.verifierMode: agentic`). Planning, cross-PR memory, and a specialist fleet remain roadmapped in [§18 Future](#18-future-not-implemented).
 
 Companion docs: `docs/MVP-PLAN.md` (scope cuts), `PLAN (1).md` (phase roadmap), `docs/WEBHOOK.md` (App setup).
+
+---
+
+## 0. What "agent" means here (and what it doesn't)
+
+**Pipeline:** the review flow is a fixed LangGraph DAG: fetch → diff → review → merge → ground → filter → verify → summarize. Generation and filtering are deterministic stages, on purpose: they keep cost, latency, and idempotency predictable.
+
+**Agentic stage:** inside `verifyFindings`, `verifierMode: agentic` replaces the one-shot keep/drop call with an **investigator** ([§8.1](#81-agentic-verification-investigator)). For each of the top-ranked findings the model runs a ReAct-style loop with read-only tools (`read_file`, `find_files`, `search_code`): it decides what to inspect next from what it has already seen, can confirm, refute, or re-rate the finding, and cites what it found. The loop is bounded by tool-call, finding, token, and USD caps, and falls back to the single-pass verifier on failure.
+
+What is still **not** agentic:
+
+- No planning or routing before review (no triage node, no specialist fleet).
+- The reviewer does not use tools; only verification does. Tools refute or confirm findings, they do not discover new ones.
+- No memory across PRs and no learning from accept/reject feedback.
+
+LangGraph provides state management, parallel fan-out, and cancellation; the tool loop is a small hand-rolled loop (`core/graph/review/investigate.ts`) so budgets, untrusted-content handling, and provider fallback stay under our control.
+
+**For interviewers and evaluators:** the honest framing is "a precision-first review pipeline with an agentic verifier", with the single-pass vs agentic trade-off measured by `pnpm eval` (see `evals/README.md`).
 
 ---
 
@@ -23,7 +41,7 @@ Companion docs: `docs/MVP-PLAN.md` (scope cuts), `PLAN (1).md` (phase roadmap), 
 
 - GitLab, Bitbucket, or other hosts.
 - Queue workers, Postgres run history, Pinecone retrieval, shadow mode, multi-tenant admin.
-- Specialist reviewer fleet, triage node, agent tool loops, `/ask`, `/improve`, `/similar_issue`, `/config` slash commands.
+- Specialist reviewer fleet, triage node, tool use in the reviewer itself, `/ask`, `/improve`, `/similar_issue`, `/config` slash commands.
 - Auto-merge, auto-fix without human acceptance, or executing PR code on trusted runners.
 - Replacing human review; this is a first-pass reviewer.
 
@@ -31,16 +49,16 @@ Companion docs: `docs/MVP-PLAN.md` (scope cuts), `PLAN (1).md` (phase roadmap), 
 
 ## 2. Design principles
 
-| Principle | MVP implementation |
-| --- | --- |
-| Transport-agnostic core | All product logic in `src/core/`; `cli/` and `server/` call `runCommand`. |
-| Fast webhook ack | Hono returns `202` immediately; review runs in-process after the response (no Redis queue yet). |
-| Deterministic + LLM | CI check annotations become `source: ci` findings; LLM findings go through a verifier before publish. |
-| Structured output only | `LlmGateway.invokeStructured` + Zod schemas; repair retries on schema failure. |
-| Generate then filter | Review units → merge → ground → confidence/severity filter → verify → summarize. |
-| Bounded work | Per-run token/USD budgets, `maxGraphSteps`, `maxConcurrency`, diff token budgets, inline comment cap. |
+| Principle               | MVP implementation                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| Transport-agnostic core | All product logic in `src/core/`; `cli/` and `server/` call `runCommand`.                               |
+| Fast webhook ack        | Hono returns `202` immediately; review runs in-process after the response (no Redis queue yet).         |
+| Deterministic + LLM     | CI check annotations become `source: ci` findings; LLM findings go through a verifier before publish.   |
+| Structured output only  | `LlmGateway.invokeStructured` + Zod schemas; repair retries on schema failure.                          |
+| Generate then filter    | Review units → merge → ground → confidence/severity filter → verify → summarize.                        |
+| Bounded work            | Per-run token/USD budgets, `maxGraphSteps`, `maxConcurrency`, diff token budgets, inline comment cap.   |
 | Idempotent, cancellable | Finding fingerprints + HTML markers; supersede aborts in-flight runs; publisher refuses stale head SHA. |
-| Config by schema | Layered YAML + Zod; invalid layers ignored with warnings. |
+| Config by schema        | Layered YAML + Zod; invalid layers ignored with warnings.                                               |
 
 ---
 
@@ -87,19 +105,19 @@ Companion docs: `docs/MVP-PLAN.md` (scope cuts), `PLAN (1).md` (phase roadmap), 
 
 ### 4.1 CLI (`src/cli/`)
 
-| Command | Behavior |
-| --- | --- |
+| Command         | Behavior                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
 | `describe <pr>` | LangGraph describe graph; updates managed `pr-agent:describe` section in PR body; optional `--update-title`. |
-| `review <pr>` | Full review graph; posts inline review + sticky `pr-agent:review` summary unless `--dry-run`. |
-| `config show` | Effective merged configuration. |
+| `review <pr>`   | Full review graph; posts inline review + sticky `pr-agent:review` summary unless `--dry-run`.                |
+| `config show`   | Effective merged configuration.                                                                              |
 
 Global flags: `--config`, `--log-level`, `--json`, `--record-dir` (review).
 
 ### 4.2 Webhook server (`src/server/`)
 
-| Route | Behavior |
-| --- | --- |
-| `GET /healthz` | Liveness JSON `{ ok: true }`. |
+| Route                   | Behavior                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `GET /healthz`          | Liveness JSON `{ ok: true }`.                                                  |
 | `POST /webhooks/github` | Validates `X-Hub-Signature-256`, dedupes `X-GitHub-Delivery`, dispatches work. |
 
 **Events handled:**
@@ -139,13 +157,13 @@ Handlers respect `dryRun`, `signal` (cancellation), and optional injected `clien
 
 `buildReviewContext` loads in parallel:
 
-| Input | Used for |
-| --- | --- |
-| `listFiles`, `listCommits` | Diff preparation and prompts |
-| `listReviewComments` | Prior findings (fingerprint markers in bodies) |
-| `listCheckRuns` + `listCheckAnnotations` | `ciSummary` text and `checkAnnotations` for CI findings |
-| `getFileContent` on `AGENTS.md` / `CLAUDE.md` | `repoRules` (truncated) |
-| Linked issues from title/body | `extractLinkedIssues` + `getIssue` → `linkedIssues` block |
+| Input                                         | Used for                                                  |
+| --------------------------------------------- | --------------------------------------------------------- |
+| `listFiles`, `listCommits`                    | Diff preparation and prompts                              |
+| `listReviewComments`                          | Prior findings (fingerprint markers in bodies)            |
+| `listCheckRuns` + `listCheckAnnotations`      | `ciSummary` text and `checkAnnotations` for CI findings   |
+| `getFileContent` on `AGENTS.md` / `CLAUDE.md` | `repoRules` (truncated)                                   |
+| Linked issues from title/body                 | `extractLinkedIssues` + `getIssue` → `linkedIssues` block |
 
 Output type: `ReviewContext` (PR, files, commits, rules, linked issues, CI summary, prior findings, raw annotations).
 
@@ -187,13 +205,37 @@ START
 
 **LLM roles (config `models.*`):**
 
-| Role | Default use |
-| --- | --- |
-| `reviewer` | Structured findings per review unit |
-| `verifier` | keep/drop + reason per LLM finding |
-| `summarizer` | `ReviewSummary` (overview, risk, highlights, file groups) |
+| Role         | Default use                                                                              |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| `reviewer`   | Structured findings per review unit                                                      |
+| `verifier`   | keep/drop + reason per LLM finding; in agentic mode also runs the investigator tool loop |
+| `summarizer` | `ReviewSummary` (overview, risk, highlights, file groups)                                |
 
 On summarizer failure, a deterministic fallback summary is used. `riskLevel` is floored to the worst finding severity.
+
+### 8.1 Agentic verification (investigator)
+
+Enabled by `review.verifierMode: agentic` (default `single`). Code: `core/graph/review/investigate.ts`, called from `verify.ts`.
+
+```
+for each LLM finding (ranked; first review.maxInvestigations get tools):
+  loop (≤ review.maxToolCallsPerReviewer tool calls)
+    model turn ──► tool calls? ── no ──► stop
+         │ yes
+         └─► execute read_file | find_files | search_code ─► append result ─┐
+  structured verdict { keep, reason, revisedSeverity, confirmingEvidence } ◄─┘
+```
+
+| Concern         | Behavior                                                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tools           | `read_file` (≤200 lines, head SHA, fork-aware), `find_files` (git tree), `search_code` (GitHub code search on the default branch; may lag the PR). All read-only, outputs clipped. |
+| Autonomy        | The model chooses tools and order each turn; it stops when it has enough evidence.                                                                                                 |
+| Self-correction | Findings can be dropped when code elsewhere handles the case, or have severity revised; `confirmingEvidence` is appended to the finding.                                           |
+| Safety          | Tool output and finding text pass through `neutralizeTags` and are wrapped in `<tool_result>`; the system prompt forbids following instructions found there. No code execution.    |
+| Bounds          | Per-finding tool cap, per-run `maxInvestigations`, shared token/USD budget (`BudgetExceededError` aborts), abort signal checked each turn.                                         |
+| Degradation     | A failed investigation (tool-less model, provider error) falls back to the single-pass verifier for that finding. Findings beyond the investigation quota use the single pass.     |
+| Model support   | Needs a provider whose chat model supports tool calling (OpenAI, Anthropic, Groq gpt-oss all do).                                                                                  |
+| Observability   | `ReviewStats` records `investigated`, `investigationToolCalls`, `severityRevised`; cost appears under nodes `review.investigate` and `review.investigate.verdict`.                 |
 
 **Schemas:**
 
@@ -252,17 +294,17 @@ Layers (last wins): defaults → optional org/installation file (future) → rep
 
 Representative keys:
 
-| Key | Purpose |
-| --- | --- |
-| `ignore.globs` / `allowGlobs` | Diff inclusion |
-| `diff.*` | Context lines, file caps, unit token budget |
-| `review.maxInlineComments` | Inline cap (overflow in collapsed summary) |
-| `review.minConfidence`, `review.severityThreshold` | Post-filter |
-| `review.enableVerifier` | Second-pass keep/drop |
-| `review.maxConcurrency` | Review units + verifier batching |
-| `server.autoReviewOnOpen` | Webhook auto-review |
-| `models.reviewer` / `verifier` / `summarizer` | Provider + model id |
-| `budgets.perRunUsd`, `budgets.perRunTokens` | Hard stop |
+| Key                                                | Purpose                                     |
+| -------------------------------------------------- | ------------------------------------------- |
+| `ignore.globs` / `allowGlobs`                      | Diff inclusion                              |
+| `diff.*`                                           | Context lines, file caps, unit token budget |
+| `review.maxInlineComments`                         | Inline cap (overflow in collapsed summary)  |
+| `review.minConfidence`, `review.severityThreshold` | Post-filter                                 |
+| `review.enableVerifier`                            | Second-pass keep/drop                       |
+| `review.maxConcurrency`                            | Review units + verifier batching            |
+| `server.autoReviewOnOpen`                          | Webhook auto-review                         |
+| `models.reviewer` / `verifier` / `summarizer`      | Provider + model id                         |
+| `budgets.perRunUsd`, `budgets.perRunTokens`        | Hard stop                                   |
 
 Environment: `src/core/config/env.ts` — App credentials, webhook secret, LLM keys, `PORT`, `LOG_LEVEL`.
 
@@ -270,14 +312,14 @@ Environment: `src/core/config/env.ts` — App credentials, webhook secret, LLM k
 
 ## 13. Security model
 
-| Topic | MVP behavior |
-| --- | --- |
-| Credentials | GitHub App installation tokens; webhook HMAC; secrets in env only. |
+| Topic            | MVP behavior                                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Credentials      | GitHub App installation tokens; webhook HMAC; secrets in env only.                                                     |
 | Prompt injection | System prompts forbid obeying PR text; `neutralizeTags` on untrusted fields; eval cases for adversarial titles/bodies. |
-| Authorization | Slash commands only for collaborators (`repos.checkCollaborator`). |
-| Fork PRs | Review uses API-fetched patches only; no checkout or test execution of PR code. |
-| Stale posts | Aborted runs and publisher head-SHA check prevent comments on outdated commits. |
-| Secrets in diffs | Relies on model + security category prompts; no separate redaction pipeline yet. |
+| Authorization    | Slash commands only for collaborators (`repos.checkCollaborator`).                                                     |
+| Fork PRs         | Review uses API-fetched patches only; no checkout or test execution of PR code.                                        |
+| Stale posts      | Aborted runs and publisher head-SHA check prevent comments on outdated commits.                                        |
+| Secrets in diffs | Relies on model + security category prompts; no separate redaction pipeline yet.                                       |
 
 ---
 
@@ -291,12 +333,12 @@ Environment: `src/core/config/env.ts` — App credentials, webhook secret, LLM k
 
 ## 15. Testing and evaluation
 
-| Layer | Location | Focus |
-| --- | --- | --- |
-| Unit | `tests/diff`, `tests/config`, `tests/graph`, `tests/server` | Parsing, grounding, skip rules, signatures |
-| Integration | `tests/commands`, `tests/github` (msw) | End-to-end command and API shapes |
-| Graph | Scripted `ScriptedLlm` | Fan-out, filter, verifier, CI merge |
-| Evals | `evals/cases/*.json`, `pnpm eval` | Precision/recall vs labeled line ranges; baseline compare |
+| Layer       | Location                                                    | Focus                                                     |
+| ----------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| Unit        | `tests/diff`, `tests/config`, `tests/graph`, `tests/server` | Parsing, grounding, skip rules, signatures                |
+| Integration | `tests/commands`, `tests/github` (msw)                      | End-to-end command and API shapes                         |
+| Graph       | Scripted `ScriptedLlm`                                      | Fan-out, filter, verifier, CI merge                       |
+| Evals       | `evals/cases/*.json`, `pnpm eval`                           | Precision/recall vs labeled line ranges; baseline compare |
 
 Eval runner uses in-memory `MemoryGitHubClient` and the real review graph. Reports land in `evals/reports/`; baselines documented in `evals/baselines/README.md`.
 
@@ -349,7 +391,7 @@ Planned in `PLAN (1).md` but cut or deferred for MVP:
 
 - **Queue + worker** — BullMQ/SQS, Postgres `runs` / `findings` / `feedback_events`, webhook dedupe in Redis.
 - **Precision engine** — triage, parallel specialists, embedding dedupe, ranker, suggestion verification pipeline.
-- **Pinecone** — issue and code indexes, `/similar_issue`, agent tools (`readFileAtRef`, `searchCode`, …).
+- **Pinecone** — issue and code indexes, `/similar_issue`. (Basic agent tools `read_file` / `find_files` / `search_code` already exist in the investigator, §8.1.)
 - **Feedback loop** — learned suppression rules, acceptance metrics, canary/shadow mode.
 - **Check runs** — optional merge gating, richer CI integration beyond annotations.
 - **Slash commands** — `/ask`, `/config`, `/improve` as separate graphs.
@@ -360,25 +402,25 @@ When adding any of these, keep the rule: **extend `core/`, keep transports thin*
 
 ## 19. Key decisions (MVP)
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Webhook execution | In-process after `202` | Fastest path to demo; queue when load or multi-instance demands it |
-| Single reviewer + verifier | Not five specialists | Cost/latency; verifier gives most precision upside |
-| CI signal | GitHub check annotations only | No Semgrep/lint runners to operate |
-| Finding identity | Hash fingerprint + marker comments | Idempotent GitHub writes without a database |
-| Grounding | Diff line index before publish | Reduces invalid inline comments; 422 fallback to summary |
-| Config | Zod + `.pr-agent.yaml` | Repo-specific caps without redeploying the server |
-| Evals | Synthetic + growing real cases | Repeatable quality signal for demos and CI gates |
+| Decision                   | Choice                             | Rationale                                                          |
+| -------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| Webhook execution          | In-process after `202`             | Fastest path to demo; queue when load or multi-instance demands it |
+| Single reviewer + verifier | Not five specialists               | Cost/latency; verifier gives most precision upside                 |
+| CI signal                  | GitHub check annotations only      | No Semgrep/lint runners to operate                                 |
+| Finding identity           | Hash fingerprint + marker comments | Idempotent GitHub writes without a database                        |
+| Grounding                  | Diff line index before publish     | Reduces invalid inline comments; 422 fallback to summary           |
+| Config                     | Zod + `.pr-agent.yaml`             | Repo-specific caps without redeploying the server                  |
+| Evals                      | Synthetic + growing real cases     | Repeatable quality signal for demos and CI gates                   |
 
 ---
 
 ## 20. Document map
 
-| Document | Audience |
-| --- | --- |
-| `ARCHITECTURE.md` (this file) | Engineers: as-built system and extension points |
-| `docs/IMPLEMENTATION.md` | How each stage works in depth (theory and invariants) |
-| `docs/MVP-PLAN.md` | What shipped vs cut for the demo |
-| `PLAN (1).md` | Original multi-phase roadmap |
-| `README.md` | Quick start, commands, deploy one-liner |
-| `docs/WEBHOOK.md` | GitHub App permissions and smee setup |
+| Document                      | Audience                                              |
+| ----------------------------- | ----------------------------------------------------- |
+| `ARCHITECTURE.md` (this file) | Engineers: as-built system and extension points       |
+| `docs/IMPLEMENTATION.md`      | How each stage works in depth (theory and invariants) |
+| `docs/MVP-PLAN.md`            | What shipped vs cut for the demo                      |
+| `PLAN (1).md`                 | Original multi-phase roadmap                          |
+| `README.md`                   | Quick start, commands, deploy one-liner               |
+| `docs/WEBHOOK.md`             | GitHub App permissions and smee setup                 |

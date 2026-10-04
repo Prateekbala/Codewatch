@@ -49,6 +49,8 @@ export interface Totals extends Ratios {
   readonly costPerCaseUsd: number;
   readonly durationMs: number;
   readonly erroredCases: number;
+  /** Cases where a review unit failed (rate limits, timeouts). Their scores are not comparable. */
+  readonly degradedCases: number;
 }
 
 export interface EvalReport {
@@ -131,6 +133,7 @@ export const summarize = (cases: readonly CaseReport[]): Totals => {
     costPerCaseUsd: cases.length === 0 ? 0 : costUsd / cases.length,
     durationMs: sum((report) => report.durationMs),
     erroredCases: cases.filter((report) => report.error !== null).length,
+    degradedCases: cases.filter((report) => report.failedUnits > 0).length,
   };
 };
 
@@ -195,9 +198,11 @@ export const formatReport = (report: EvalReport, comparison?: Comparison): strin
       const status =
         item.error !== null
           ? "ERROR"
-          : item.falsePositives + item.falseNegatives === 0
-            ? "ok"
-            : "miss";
+          : item.failedUnits > 0
+            ? "DEGR"
+            : item.falsePositives + item.falseNegatives === 0
+              ? "ok"
+              : "miss";
       const detail = [
         ...item.missed.map((miss) => `    missed ${miss.path}:${miss.startLine}`),
         ...item.unexpected.map(
@@ -214,6 +219,11 @@ export const formatReport = (report: EvalReport, comparison?: Comparison): strin
     `precision ${percent(report.totals.precision)} | recall ${percent(report.totals.recall)} | f1 ${percent(report.totals.f1)}`,
     `tokens ${report.totals.tokens} | cost $${report.totals.costUsd.toFixed(4)} ($${report.totals.costPerCaseUsd.toFixed(4)}/case) | ${report.totals.durationMs}ms`,
   ];
+  if (report.totals.degradedCases > 0) {
+    lines.push(
+      `WARNING: ${report.totals.degradedCases} case(s) had failed review units (rate limit or timeout). Precision and recall are not valid; rerun with lower concurrency or higher llm.maxRetries.`,
+    );
+  }
   if (comparison) {
     lines.push(
       `vs baseline: precision ${(comparison.precisionDelta * 100).toFixed(1)}pp | recall ${(comparison.recallDelta * 100).toFixed(1)}pp | cost/case ${comparison.costPerCaseDeltaUsd >= 0 ? "+" : "-"}$${Math.abs(comparison.costPerCaseDeltaUsd).toFixed(4)}`,

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { Command, Option } from "commander";
+import ora from "ora";
 
 import { formatConfigYaml, resolveEffectiveConfig } from "../core/commands/config.ts";
 import { runCommand } from "../core/commands/run.ts";
@@ -89,21 +90,31 @@ export const buildProgram = (): Command => {
         command: Command,
       ) => {
         const globals = command.optsWithGlobals<GlobalOptions>();
+        const isTTY = !options.json && process.stdout.isTTY === true;
         const runtime = buildRuntime(globals, options.json);
-        const outcome = await runCommand(runtime, parsePullRequestRef(pr), "describe", {
-          dryRun: options.dryRun,
-          signal: installAbortHandler(),
-          ...(options.updateTitle === undefined ? {} : { updateTitle: options.updateTitle }),
-          ...optionalCliLayer(globals.config),
-        });
-        if (outcome.configIssues.length > 0) {
-          process.stderr.write(`${formatIssues(outcome.configIssues)}\n`);
+        const spinner = isTTY
+          ? ora({ text: `Generating description for ${pr} …`, color: "cyan" }).start()
+          : null;
+        try {
+          const outcome = await runCommand(runtime, parsePullRequestRef(pr), "describe", {
+            dryRun: options.dryRun,
+            signal: installAbortHandler(),
+            ...(options.updateTitle === undefined ? {} : { updateTitle: options.updateTitle }),
+            ...optionalCliLayer(globals.config),
+          });
+          spinner?.succeed("Done");
+          if (outcome.configIssues.length > 0) {
+            process.stderr.write(`${formatIssues(outcome.configIssues)}\n`);
+          }
+          process.stdout.write(
+            options.json
+              ? `${JSON.stringify(describeOutcomeToJson(outcome), null, 2)}\n`
+              : `${describeOutcomeToText(outcome)}\n`,
+          );
+        } catch (err) {
+          spinner?.fail("Failed");
+          throw err;
         }
-        process.stdout.write(
-          options.json
-            ? `${JSON.stringify(describeOutcomeToJson(outcome), null, 2)}\n`
-            : `${describeOutcomeToText(outcome)}\n`,
-        );
       },
     );
 
@@ -121,28 +132,39 @@ export const buildProgram = (): Command => {
         command: Command,
       ) => {
         const globals = command.optsWithGlobals<GlobalOptions>();
+        const isTTY = !options.json && process.stdout.isTTY === true;
         const runtime = buildRuntime(globals, options.json);
-        const outcome = await runCommand(runtime, parsePullRequestRef(pr), "review", {
-          dryRun: options.dryRun,
-          signal: installAbortHandler(),
-          ...optionalCliLayer(globals.config),
-        });
-        if (outcome.configIssues.length > 0) {
-          process.stderr.write(`${formatIssues(outcome.configIssues)}\n`);
-        }
-        const record = reviewOutcomeToJson(outcome);
-        if (options.recordDir !== undefined) {
-          mkdirSync(options.recordDir, { recursive: true });
-          writeFileSync(
-            join(options.recordDir, `${outcome.runId}.json`),
-            `${JSON.stringify(record, null, 2)}\n`,
+        const spinner = isTTY ? ora({ text: `Reviewing ${pr} …`, color: "cyan" }).start() : null;
+        try {
+          const outcome = await runCommand(runtime, parsePullRequestRef(pr), "review", {
+            dryRun: options.dryRun,
+            signal: installAbortHandler(),
+            ...optionalCliLayer(globals.config),
+          });
+          const count = outcome.review.findings.length;
+          spinner?.succeed(
+            count > 0 ? `Review complete — ${count} finding(s)` : "Review complete — no issues",
           );
+          if (outcome.configIssues.length > 0) {
+            process.stderr.write(`${formatIssues(outcome.configIssues)}\n`);
+          }
+          const record = reviewOutcomeToJson(outcome);
+          if (options.recordDir !== undefined) {
+            mkdirSync(options.recordDir, { recursive: true });
+            writeFileSync(
+              join(options.recordDir, `${outcome.runId}.json`),
+              `${JSON.stringify(record, null, 2)}\n`,
+            );
+          }
+          process.stdout.write(
+            options.json
+              ? `${JSON.stringify(record, null, 2)}\n`
+              : `${reviewOutcomeToText(outcome)}\n`,
+          );
+        } catch (err) {
+          spinner?.fail("Review failed");
+          throw err;
         }
-        process.stdout.write(
-          options.json
-            ? `${JSON.stringify(record, null, 2)}\n`
-            : `${reviewOutcomeToText(outcome)}\n`,
-        );
       },
     );
 
